@@ -443,6 +443,10 @@ function updateRightClickMenu(){
     globalThis.rightClick.setTitle('clear_gallery', LANG.right_menu_clear_gallery);
     globalThis.rightClick.setTitle('bcryptHash', LANG.right_menu_bcrypt_hash);
 
+    for (const action of PROMPT_EDIT_ACTIONS) {
+        globalThis.rightClick.setTitle(`prompt_${action}`, promptEditLabel(action));
+    }
+
     globalThis.rightClick.setTitle('lora_common_to_slot', LANG.right_menu_send_lora_to_slot);
     globalThis.rightClick.setTitle('lora_positive_to_slot', LANG.right_menu_send_lora_to_slot);
     globalThis.rightClick.setTitle('test_ai_generate', LANG.right_menu_test_ai_generate);
@@ -532,6 +536,17 @@ function registerDefaultMenuItems() {
     globalThis.rightClick.append('copy_image_preview_grid', LANG.right_menu_copy_image, {
         selector: '.cg-thumb-item',
         func: (element) => menu_copyImage(element)
+    });
+
+    // Local change: cut / copy / paste in every prompt box
+    for (const action of PROMPT_EDIT_ACTIONS) {
+        globalThis.rightClick.append(`prompt_${action}`, promptEditLabel(action), {
+            selector: PROMPT_BOXES,
+            func: async (element) => await prompt_editText(element, action)
+        });
+    }
+    globalThis.rightClick.append('separator_prompt_edit', null, {
+        selector: PROMPT_BOXES
     });
 
     // Common
@@ -697,6 +712,39 @@ async function menu_copyImageMetadata(element) {
             throw new Error(`Metadata extraction failed: ${error.message}`);
         }
     }
+}
+
+const PROMPT_BOXES = '.prompt-common, .prompt-positive, .prompt-positive-right, .prompt-negative, .prompt-ai, .prompt-exclude';
+const PROMPT_EDIT_ACTIONS = ['cut', 'copy', 'paste'];
+
+function promptEditLabel(action) {
+    const labels = globalThis.globalSettings.language === 'en-US'
+        ? { cut: 'Cut', copy: 'Copy', paste: 'Paste' }
+        : { cut: '剪下', copy: '複製', paste: '貼上' };
+    return labels[action];
+}
+
+async function prompt_editText(element, action) {
+    const textarea = element.querySelector('textarea');
+    if (!textarea) {
+        return;
+    }
+    const { selectionStart: start, selectionEnd: end } = textarea;
+    if (action === 'paste') {
+        textarea.setRangeText(await navigator.clipboard.readText(), start, end, 'end');
+    } else {
+        if (start === end) {
+            return;
+        }
+        await navigator.clipboard.writeText(textarea.value.slice(start, end));
+        if (action === 'copy') {
+            return;
+        }
+        textarea.setRangeText('', start, end, 'end');
+    }
+    textarea.focus();
+    // Let myTextbox resize and store the new value
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
 function prompt_sendLoRAtoSlot(element, textArea){

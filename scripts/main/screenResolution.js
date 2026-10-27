@@ -6,6 +6,8 @@ export const RECOMMENDED_WINDOW = {
   height: 1304
 };
 
+const MIN_ZOOM_FACTOR = 0.91;
+
 /** @type {{ width: number, height: number, scaleFactor: number, zoomFactor: number, workArea: { width: number, height: number }, recommended: { width: number, height: number } }} */
 let lastFit = {
   width: RECOMMENDED_WINDOW.width,
@@ -27,11 +29,12 @@ let lastFit = {
 export function detectAndApplyDisplayFit(screen) {
   const display = screen.getPrimaryDisplay();
   const workArea = display.workAreaSize;
-  const zoomFactor = Math.min(
+  // Local change: never shrink the UI below MIN_ZOOM_FACTOR; columns scroll instead
+  const zoomFactor = Math.max(Math.min(
     workArea.width / RECOMMENDED_WINDOW.width,
     workArea.height / RECOMMENDED_WINDOW.height,
     1
-  );
+  ), MIN_ZOOM_FACTOR);
   const width = Math.min(Math.round(RECOMMENDED_WINDOW.width * zoomFactor), workArea.width);
   const height = Math.min(Math.round(RECOMMENDED_WINDOW.height * zoomFactor), workArea.height);
 

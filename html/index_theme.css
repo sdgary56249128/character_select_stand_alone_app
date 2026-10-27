@@ -237,7 +237,8 @@ body {
 .gallery-main-main {
     transition: max-height 0.3s ease, opacity 0.3s ease, border-color 0.2s ease;
     overflow: hidden;
-    height: 872px;
+    /* Local change: smaller preview box, keep in sync with GALLERY_MAIN_HEIGHT in uiLayout.js */
+    height: 436px;
 }
 
 .gallery-main-main.cg-hires-frame {
@@ -1553,4 +1554,47 @@ body.right-to-left #cg-info-button {
 
 .layout-tab-view-dock .dropdown-view {
     background: transparent;
+}
+
+/* Local change: make panel collapse dots look like normal disclosure arrows (▼ open / ▶ collapsed) */
+#image-infobox-toggle,
+#gallery-main-toggle,
+#gallery-thumb-toggle,
+#highres-fix-toggle,
+#refiner-toggle,
+#controlnet-toggle,
+#regional-condition-toggle,
+#bounding-toggle,
+#model-settings-toggle,
+#add-lora-toggle,
+#jsonlist-toggle,
+#adetailer-toggle,
+#system-settings-toggle,
+#queue-toggle {
+    content: url("../scripts/svg/mydropdown-arrow-light.svg");
+    width: 18px;
+    height: 18px;
+    margin-top: 0;
+    border: none;
+    border-radius: 50%;
+    opacity: 1;
+    cursor: pointer;
+    transition: transform 0.15s ease;
+}
+
+#image-infobox-toggle.collapsed,
+#gallery-main-toggle.collapsed,
+#gallery-thumb-toggle.collapsed,
+#highres-fix-toggle.collapsed,
+#refiner-toggle.collapsed,
+#controlnet-toggle.collapsed,
+#regional-condition-toggle.collapsed,
+#bounding-toggle.collapsed,
+#model-settings-toggle.collapsed,
+#add-lora-toggle.collapsed,
+#jsonlist-toggle.collapsed,
+#adetailer-toggle.collapsed,
+#system-settings-toggle.collapsed,
+#queue-toggle.collapsed {
+    transform: rotate(-90deg);
 }

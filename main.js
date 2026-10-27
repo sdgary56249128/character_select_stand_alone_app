@@ -21,6 +21,7 @@ import { setupCachedFiles } from './scripts/main/cachedFiles.js';
 import { setupWildcardsHandlers } from './scripts/main/wildCards.js';
 import { setupTagger } from './scripts/main/imageTagger.js';
 import { setupUiLayoutHandlers } from './scripts/main/uiLayout_backend.js';
+import { setupLoraManagerBridge } from './scripts/main/loraManagerBridge.js';
 import {
   detectAndApplyDisplayFit,
   getDisplayFit,
@@ -148,6 +149,7 @@ function createWindow () {
   mainWindow.loadFile('index_electron.html').catch((error) => {
     console.error('[Main] Failed to load index_electron.html:', error);
   });
+  setupLoraManagerBridge(mainWindow);
 
   mainWindow.on('close', (event) => {
     if (allowQuit || countConnectedSaacClients() <= 0) {

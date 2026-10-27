@@ -480,14 +480,14 @@ export async function createPrompt(SETTINGS, FILES, LANG) {
             value: SETTINGS.api_neg_prompt,
             defaultTextColor: 'Crimson',
             minLines: 2,
-            maxLines: 10,
+            maxLines: 50,   // Local change: was 10, grow instead of scrolling
             shrinkToContent: true
             }, false, (value) => { globalThis.globalSettings.api_neg_prompt = value; }),
         exclude: setupTextbox('prompt-exclude', LANG.prompt_ban, {
             value: SETTINGS.prompt_ban,
             defaultTextColor: 'khaki',
             minLines: 1,
-            maxLines: 10,
+            maxLines: 50,   // Local change: was 10, grow instead of scrolling
             shrinkToContent: true
             }, false, (value) => { globalThis.globalSettings.prompt_ban = value; }),
         autoResize: setupCheckbox('prompt-textbox-autoresize', LANG.ptompt_textbox_autoresize,
@@ -631,7 +631,12 @@ async function init(){
         
         // LoRA
         globalThis.lora = setupLoRA('add-lora-main');
-        
+        window.okm.setup_loraManager_addLoRA(async (name, strength, clipStrength) => {
+            if (await globalThis.lora.addLoRA(name, strength, clipStrength)) {
+                globalThis.collapsedTabs.lora.setCollapsed(false);
+            }
+        });
+
         // Control Net
         globalThis.controlnet = setupControlNet('controlnet-main');
 

@@ -622,6 +622,39 @@ class SlotManager {
         createSlotsFromValues(this, slotValues, { context: 'Created', validateLoRA: true });
     }
 
+    // Append a LoRA sent from ComfyUI-Lora-Manager; its name has no extension and may lack the subfolder
+    async addLoRA(name, strength, clipStrength) {
+        const FILES = globalThis.cachedFiles || { loraList: [] };
+        const stem = (file) => file.replaceAll('\\', '/').replace(/\.safetensors$/i, '');
+        const findLoRA = () => FILES.loraList.find(file => stem(file) === name)
+            || FILES.loraList.find(file => stem(file).split('/').pop() === name);
+
+        let loraName = findLoRA();
+        if (!loraName) {
+            // Newly downloaded LoRA: rescan the model folders once
+            const SETTINGS = globalThis.globalSettings;
+            await globalThis.api.updateModelList([
+                SETTINGS.model_path_comfyui,
+                SETTINGS.model_path_webui,
+                SETTINGS.model_filter_keyword,
+                SETTINGS.model_filter,
+                SETTINGS.search_modelinsubfolder,
+                SETTINGS.model_filter_keyword_diffusion
+            ]);
+            FILES.loraList = await globalThis.api.getLoRAList(SETTINGS.api_interface);
+            loraName = findLoRA();
+        }
+        if (!loraName) {
+            console.warn(`[addLoRA] LoRA not found in list: ${name}`);
+            return false;
+        }
+
+        const slotValues = this.getValues();
+        slotValues.push([loraName, `${strength}`, `${clipStrength}`, 'ALL']);
+        createSlotsFromValues(this, slotValues, { context: 'Created', validateLoRA: true });
+        return true;
+    }
+
     reload() {
         const slotValues = this.getValues();
     

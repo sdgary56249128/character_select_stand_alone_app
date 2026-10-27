@@ -27,8 +27,9 @@ const CAT = '[UiLayout]';
 const DRAG_THRESHOLD = 6;
 const SCROLL_EDGE = 56;
 const SCROLL_STEP = 18;
-const GALLERY_MAIN_HEIGHT = 872;
-const GALLERY_COMPRESS_MIN = 384;
+// Local change: smaller preview box (was 872 / 384), keep in sync with .gallery-main-main in index_theme.css
+const GALLERY_MAIN_HEIGHT = 436;
+const GALLERY_COMPRESS_MIN = 160;
 const FULL_WIDTH_CSS_MAX = GALLERY_MAIN_HEIGHT + 84;
 const SPLIT_MIN_HEIGHT = 196;
 

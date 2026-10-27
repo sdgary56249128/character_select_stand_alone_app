@@ -16,7 +16,8 @@ let okm = {
   customOverlay_updatePreview: null,
   customOverlay_progressBar: null,
   rightClickMenu_spellCheck: null,
-  confirmQuitSaac: null
+  confirmQuitSaac: null,
+  loraManager_addLoRA: null
 }
 
 contextBridge.exposeInMainWorld('okm', {
@@ -44,7 +45,17 @@ contextBridge.exposeInMainWorld('okm', {
     if (typeof callback === 'function') {
       okm.confirmQuitSaac = callback;
     }
+  },
+  setup_loraManager_addLoRA: (callback) => {
+    if (typeof callback === 'function') {
+      okm.loraManager_addLoRA = callback;
+    }
   }
+});
+
+ipcRenderer.on('lora-manager-add-lora', (event, name, strength, clipStrength) => {
+  if (okm.loraManager_addLoRA)
+    okm.loraManager_addLoRA(name, strength, clipStrength);
 });
 
 const generateFunctions = {

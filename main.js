@@ -153,6 +153,13 @@ function createWindow () {
   setupLoraManagerBridge(mainWindow);
 
   mainWindow.on('close', (event) => {
+    // macOS: closing the window only hides it — SAA keeps serving remote clients (Image Remote); the Dock icon
+    // brings the window back, ⌘Q (or the launcher's stop) quits
+    if (process.platform === 'darwin' && !allowQuit && !quitting) {
+      event.preventDefault();
+      mainWindow.hide();
+      return;
+    }
     if (allowQuit || countConnectedSaacClients() <= 0) {
       return;
     }
@@ -210,6 +217,7 @@ async function initializeApp() {
       // On macOS it's common to re-create a window in the app when the
       // dock icon is clicked and there are no other windows open.
       if (BrowserWindow.getAllWindows().length === 0) createWindow()
+      else if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) mainWindow.show();   // hidden by closing it
     })
   } else {
     console.error('[Main] Failed to load required files. Exiting...');
@@ -245,7 +253,9 @@ function registerWsServiceIpc() {
   });
 }
 
+let quitting = false;   // a real quit (⌘Q, SIGTERM): the window may close then
 app.on('before-quit', (event) => {
+  quitting = true;
   if (allowQuit || countConnectedSaacClients() <= 0) {
     return;
   }

@@ -36,6 +36,14 @@ let allowQuit = false;
 // SAA_HIDDEN=1 (Image Remote's background launcher): no window and no Dock icon — SAA only serves remote clients
 // (Image Remote's web app); it is stopped from there or with the launcher's ⏹
 const hidden = process.env.SAA_HIDDEN === '1';
+// …but it can still be looked at: SIGUSR2 (Image Launcher's 🖥 顯示 SAA) brings the window and Dock icon up;
+// closing the window hides both again
+process.on('SIGUSR2', () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (process.platform === 'darwin') app.dock?.show();
+  mainWindow.show();
+  mainWindow.focus();
+});
 let quitGuardBusy = false;
 
 async function cancelAllRunningJobs() {
@@ -161,6 +169,7 @@ function createWindow () {
     if (process.platform === 'darwin' && !allowQuit && !quitting) {
       event.preventDefault();
       mainWindow.hide();
+      if (hidden) app.dock?.hide();
       return;
     }
     if (allowQuit || countConnectedSaacClients() <= 0) {

@@ -34,6 +34,9 @@ const __dirname = path.dirname(__filename);
 
 let mainWindow; // Main browser window instance
 let allowQuit = false;
+// SAA_HIDDEN=1 (Image Remote's background launcher): no window and no Dock icon — SAA only serves remote clients
+// (Image Remote's web app); it is stopped from there or with the launcher's ⏹
+const hidden = process.env.SAA_HIDDEN === '1';
 let quitGuardBusy = false;
 
 async function cancelAllRunningJobs() {
@@ -112,6 +115,7 @@ function createWindow () {
   const fit = getDisplayFit();
   // Create the browser window.
   mainWindow = new BrowserWindow({
+    show: !hidden,
     autoHideMenuBar: true,  // Hide menu
     useContentSize: true,
     width: fit.width,
@@ -180,6 +184,7 @@ async function initializeApp() {
   const version = getAppVersion();
   console.log("Character Select SAA Version:", version);
 
+  if (hidden && process.platform === 'darwin') app.dock?.hide();
   detectAndApplyDisplayFit(screen);
 
   setupFileHandlers();  
@@ -217,7 +222,7 @@ async function initializeApp() {
       // On macOS it's common to re-create a window in the app when the
       // dock icon is clicked and there are no other windows open.
       if (BrowserWindow.getAllWindows().length === 0) createWindow()
-      else if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) mainWindow.show();   // hidden by closing it
+      else if (!hidden && mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) mainWindow.show();   // hidden by closing it
     })
   } else {
     console.error('[Main] Failed to load required files. Exiting...');

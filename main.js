@@ -2,6 +2,7 @@
 // Modules to control application life and create native browser window
 import { app, BrowserWindow, ipcMain, screen } from 'electron';
 import path from 'node:path';
+import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 // common functions for main and wsService
@@ -266,15 +267,25 @@ function registerWsServiceIpc() {
 }
 
 let quitting = false;   // a real quit (⌘Q, SIGTERM): the window may close then
-// the launcher's 🛑 / Image Remote's stop send SIGTERM: always a real quit, with no question asked
-process.on('SIGTERM', () => {
-  allowQuit = true;
-  app.quit();
-});
+// A real stop (Image Launcher's 🛑, Image Remote's stop) writes SAA_STOP_FILE and then sends SIGTERM. Electron turns
+// SIGTERM into an ordinary app.quit() — the same as ⌘Q or the Dock's 結束 — so the file is what tells them apart.
+const stopFile = process.env.SAA_STOP_FILE;
+const stopRequested = () => {
+  try {
+    return !!stopFile && fs.existsSync(stopFile);
+  } catch {
+    return false;
+  }
+};
 app.on('before-quit', (event) => {
   // hidden (a background service): ⌘Q or the Dock's 結束 only puts the window away again — quitting here would
   // stop image generation for Image Remote; it is stopped with the launcher's 🛑 or the app's stop (SIGTERM)
+  if (hidden && !allowQuit && stopRequested()) {
+    console.log('[Main] stop requested: quitting');
+    allowQuit = true;
+  }
   if (hidden && !allowQuit) {
+    console.log('[Main] quit asked while hidden: hiding instead');
     event.preventDefault();
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.hide();
     if (process.platform === 'darwin') app.dock?.hide();
@@ -292,7 +303,9 @@ app.on('before-quit', (event) => {
 });
 
 // Quit when all windows are closed
+app.on('will-quit', () => console.log('[Main] will-quit'));
 app.on('window-all-closed', () => {
+  console.log('[Main] window-all-closed');
   void closeWebSocketServer()
     .catch((error) => {
       console.error('[Main] Failed to close WebSocket server:', error);

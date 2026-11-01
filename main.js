@@ -266,7 +266,20 @@ function registerWsServiceIpc() {
 }
 
 let quitting = false;   // a real quit (⌘Q, SIGTERM): the window may close then
+// the launcher's 🛑 / Image Remote's stop send SIGTERM: always a real quit, with no question asked
+process.on('SIGTERM', () => {
+  allowQuit = true;
+  app.quit();
+});
 app.on('before-quit', (event) => {
+  // hidden (a background service): ⌘Q or the Dock's 結束 only puts the window away again — quitting here would
+  // stop image generation for Image Remote; it is stopped with the launcher's 🛑 or the app's stop (SIGTERM)
+  if (hidden && !allowQuit) {
+    event.preventDefault();
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.hide();
+    if (process.platform === 'darwin') app.dock?.hide();
+    return;
+  }
   quitting = true;
   if (allowQuit || countConnectedSaacClients() <= 0) {
     return;

@@ -2,10 +2,10 @@ import { ipcMain, BrowserWindow, net } from 'electron';
 import { WebSocket } from 'ws';
 import * as wsService from '../webserver/back/wsService.js';
 import { makeBackendLockKey, tryAcquireBackendBusy, releaseBackendBusy, forceReleaseBackendBusy } from '../../main-common.js';
-import { WORKFLOW, WORKFLOW_REGIONAL, WORKFLOW_CONTROLNET, 
-  WORKFLOW_MIRA_ITU, WORKFLOW_UNET, WORKFLOW_REIONAL_UNET, 
-  WORKFLOW_MIRA_ITU_UNET, WORKFLOW_MIRA_ITU_UNET_PREBAKE, VAE_LOADER} from './comfyui_workflow.js';
-import { applySageFp16Switch, diffusionLoaderDtype } from './sageFp16Switch.js';
+import { WORKFLOW, WORKFLOW_REGIONAL, WORKFLOW_CONTROLNET,
+  WORKFLOW_MIRA_ITU, WORKFLOW_UNET, WORKFLOW_REIONAL_UNET,
+  WORKFLOW_MIRA_ITU_UNET, WORKFLOW_MIRA_ITU_UNET_PREBAKE, WORKFLOW_HIRES_I2I, VAE_LOADER} from './comfyui_workflow.js';
+import { applySageFp16Switch, applyOverrideVae, diffusionLoaderDtype } from './sageFp16Switch.js';
 
 const CAT = '[ComfyUI]';
 const TIMEOUT = 5000; // 5 seconds timeout for backend response
@@ -121,6 +121,16 @@ function toPreviewBuffer(data) {
         return Buffer.from(data, 'latin1');
     }
     return null;
+}
+
+function pruneWorkflowNodes(workflow, ids) {
+  for (const id of ids) {
+    delete workflow[String(id)];
+  }
+}
+
+function hasActiveADetailer(adetailers) {
+  return Array.isArray(adetailers) && adetailers.some((item) => item?.mask_filter_method !== 'Off');
 }
 
 function extractPreviewImage(buf) {
@@ -521,10 +531,11 @@ function applyControlnet(workflow, controlnet, workflowInfo){
 }
 
 function applyADetailer(workflow, adetailers, workflowInfo) {
-  const {startIndex, refiner, hiresfix} = workflowInfo;
+  const {startIndex, refiner, hiresFix, imageNode, vaeNode} = workflowInfo;
   let index =startIndex + 1;
   const modelUSE = refiner?43:45; // 45: default   43: refiner
-  let imageVAED = hiresfix?28:6;
+  let imageVAED = imageNode ?? (hiresFix?28:6);
+  const vaeLink = vaeNode ? [`${vaeNode}`, 0] : [`${modelUSE}`, 2];
   const randomSeed = globalThis.crypto.getRandomValues(new Uint32Array(1))[0]; // 4294967296 = 2^32
 
   for(const adetailer of adetailers) {
@@ -622,10 +633,7 @@ function applyADetailer(workflow, adetailers, workflowInfo) {
           `${modelUSE}`,
           1
         ],
-        "vae": [
-          `${modelUSE}`,
-          2
-        ],
+        "vae": vaeLink,
         "positive": [
           `${index + 2}`,
           0
@@ -661,9 +669,9 @@ function applyADetailer(workflow, adetailers, workflowInfo) {
 }
 
 function applyADetailerUnet(workflow, adetailers, workflowInfo) {
-  const {startIndex, model, clip, vae, hiresfix, colorTransfer=28, normalVae=6} = workflowInfo;
+  const {startIndex, model, clip, vae, hiresFix, colorTransfer=28, normalVae=6, imageNode} = workflowInfo;
   let index = startIndex + 1;
-  let imageVAED = hiresfix?colorTransfer:normalVae; 
+  let imageVAED = imageNode ?? (hiresFix?colorTransfer:normalVae); 
   const randomSeed = globalThis.crypto.getRandomValues(new Uint32Array(1))[0]; // 4294967296 = 2^32
 
   for(const adetailer of adetailers) {
@@ -1289,6 +1297,8 @@ class ComfyUI {
 
     let workflow = structuredClone(WORKFLOW);
     let refiner_start_step = 1000;
+    const refinerActive = refiner.enable && model !== refiner.model;
+    const skipColorTransfer = hifix.enable && hifix.colorTransfer === 'None';
 
     if (model !== 'Default') {
       // Set model name
@@ -1309,7 +1319,7 @@ class ComfyUI {
       }
     }
 
-    if (refiner.enable && model !== refiner.model) {
+    if (refinerActive) {
       // Set refiner model name
       workflow["43"].inputs.ckpt_name = refiner.model;
       if((refiner.vpred === 0 && (refiner.model.includes('vPred') || refiner.model.includes('VPR'))) || refiner.vpred === 1 || refiner.vpred === 2) {
@@ -1342,6 +1352,12 @@ class ComfyUI {
       workflow["18"].inputs.vae = ["45", 2];
       // Model Loader to Hires fix Vae Encode Tiled
       workflow["19"].inputs.vae = ["45", 2];
+      if (hifix.enable) {
+        // Hires must use base stack once refiner nodes are pruned
+        workflow["20"].inputs.model = ["34", 0];
+        workflow["20"].inputs.positive = ["2", 0];
+        workflow["20"].inputs.negative = ["3", 0];
+      }
     }
 
     // Set Sampler and Scheduler
@@ -1391,7 +1407,7 @@ class ComfyUI {
         workflow["46"].inputs.scale_by = hifix.scale;
 
         // Check if refiner enabled
-        if (refiner.enable){
+        if (refinerActive){
           workflow["46"].inputs.samples = ["37", 0];
         }
 
@@ -1405,7 +1421,7 @@ class ComfyUI {
         workflow["27"].inputs.model_name = `${hifix.model}`;
       }
 
-      if(hifix.colorTransfer === 'None'){
+      if(skipColorTransfer){
         // Image Save set to 2nd VAE Decode (Tiled)
         workflow["29"].inputs.images = ["18", 0];
       } else {
@@ -1424,8 +1440,8 @@ class ComfyUI {
       // Override VAE settings
       workflow["47"].inputs.vae_name = vae.vae;
       workflow["6"].inputs.vae = ["47", 0];
-      workflow["18"].inputs.vae = ["47", 0];      
-      workflow["19"].inputs.vae = ["47", 0];
+      if (workflow["18"]) workflow["18"].inputs.vae = ["47", 0];
+      if (workflow["19"]) workflow["19"].inputs.vae = ["47", 0];
     }
 
     // default pos and neg to ksampler
@@ -1433,19 +1449,30 @@ class ComfyUI {
       startIndex: (vae.vae_override && vae.vae !== 'None')?47:46,
       now_pos:    2,
       now_neg:    3,
-      refiner:    refiner.enable,
+      refiner:    refinerActive,
       ref_pos:    41,
       ref_neg:    40,
-      hiresfix:   hifix.enable
+      hiresFix:   hifix.enable
     };
     const { workflowCN, indexCN } = applyControlnet(workflow, controlnet, workflowInfo);
 
     workflowInfo = {
       startIndex: indexCN,
-      refiner:    refiner.enable,
-      hiresfix:   hifix.enable
+      refiner:    refinerActive,
+      hiresFix:   hifix.enable
     };
     workflow = applyADetailer(workflowCN, adetailer, workflowInfo);
+
+    if (!hifix.enable) {
+      pruneWorkflowNodes(workflow, [25, 27, 19, 20, 18, 28, 46]);
+    } else if (skipColorTransfer && !hasActiveADetailer(adetailer)) {
+      pruneWorkflowNodes(workflow, [28]);
+    }
+
+    if (!refinerActive) {
+      pruneWorkflowNodes(workflow, [37, 39, 40, 41, 43, 44]);
+    }
+
     return workflow;
   }
 
@@ -1548,29 +1575,23 @@ class ComfyUI {
       workflow["61"].inputs.sampler_name = sampler;
       workflow["61"].inputs.scheduler = scheduler;
 
-      // Coloe Transfer method
-      workflow["62"].inputs.method = hifix.colorTransfer;
-
       // Image Save set new width and height
       workflow["29"].inputs.width = ["17", 3];
       workflow["29"].inputs.height = ["17", 4];
+
+      if (hifix.colorTransfer === 'None') {
+        workflow["29"].inputs.images = ["58", 0];
+        pruneWorkflowNodes(workflow, [62]);
+      } else {
+        // Color Transfer method
+        workflow["62"].inputs.method = hifix.colorTransfer;
+      }
     } else {
       // Image Save set to First VAE Decode
       workflow["29"].inputs.images = ["6", 0];
 
       // Remove Hires fix nodes
-      // Upscale Image By Model Then Resize
-      delete workflow["54"];
-      // Load Upscale Model
-      delete workflow["55"];
-      // Vae Encode
-      delete workflow["56"];
-      // Vae Decode
-      delete workflow["58"];
-      // Ksampler HiFix
-      delete workflow["61"];
-      // Color Transfer
-      delete workflow["62"];
+      pruneWorkflowNodes(workflow, [54, 55, 56, 58, 61, 62]);
     }
 
     // default pos and neg to ksampler
@@ -1601,6 +1622,8 @@ class ComfyUI {
     
     let workflow = structuredClone(WORKFLOW_REGIONAL);
     let refiner_start_step = 1000;
+    const refinerActive = refiner.enable && model !== refiner.model;
+    const skipColorTransfer = hifix.enable && hifix.colorTransfer === 'None';
 
     if (model !== 'Default') {
         // Set model name
@@ -1621,7 +1644,7 @@ class ComfyUI {
         }
     }
 
-    if (refiner.enable && model !== refiner.model) {
+    if (refinerActive) {
         // Set refiner model name
         workflow["43"].inputs.ckpt_name = refiner.model;
         if((refiner.vpred === 0 && (refiner.model.includes('vPred') || refiner.model.includes('VPR'))) || refiner.vpred === 1 || refiner.vpred === 2) {
@@ -1654,6 +1677,12 @@ class ComfyUI {
         workflow["18"].inputs.vae = ["45", 2];
         // Model Loader to Hires fix Vae Encode Tiled
         workflow["19"].inputs.vae = ["45", 2];
+        if (hifix.enable) {
+          // Hires must use base regional stack once refiner nodes are pruned
+          workflow["20"].inputs.model = ["34", 0];
+          workflow["20"].inputs.positive = ["53", 0];
+          workflow["20"].inputs.negative = ["3", 0];
+        }
     }
 
     // Set Sampler and Scheduler
@@ -1702,13 +1731,17 @@ class ComfyUI {
     // Set Left Mask Strength and Area
     workflow["50"].inputs.strength = regional.str_left;
     workflow["50"].inputs.set_cond_area = regional.option_left;
-    workflow["55"].inputs.strength = regional.str_left;
-    workflow["55"].inputs.set_cond_area = regional.option_left;
+    if (refinerActive) {
+      workflow["55"].inputs.strength = regional.str_left;
+      workflow["55"].inputs.set_cond_area = regional.option_left;
+    }
     // Set Right Mask Strength and Area
     workflow["52"].inputs.strength = regional.str_right;
     workflow["52"].inputs.set_cond_area = regional.option_right;
-    workflow["56"].inputs.strength = regional.str_right;
-    workflow["56"].inputs.set_cond_area = regional.option_right;
+    if (refinerActive) {
+      workflow["56"].inputs.strength = regional.str_right;
+      workflow["56"].inputs.set_cond_area = regional.option_right;
+    }
 
     if (hifix.enable) {
       // Set Hires fix seed and denoise
@@ -1725,7 +1758,7 @@ class ComfyUI {
           workflow["58"].inputs.scale_by = hifix.scale;
 
           // Check if refiner enabled
-          if (refiner.enable){
+          if (refinerActive){
             workflow["58"].inputs.samples = ["37", 0];
           }
 
@@ -1739,7 +1772,7 @@ class ComfyUI {
         workflow["27"].inputs.model_name = `${hifix.model}`;
       }
 
-      if(hifix.colorTransfer === 'None'){
+      if(skipColorTransfer){
           // Image Save set to 2nd VAE Decode (Tiled)
           workflow["29"].inputs.images = ["18", 0];
       } else {
@@ -1758,8 +1791,8 @@ class ComfyUI {
       // Override VAE settings
       workflow["59"].inputs.vae_name = vae.vae;
       workflow["6"].inputs.vae = ["59", 0];
-      workflow["18"].inputs.vae = ["59", 0];      
-      workflow["19"].inputs.vae = ["59", 0];
+      if (workflow["18"]) workflow["18"].inputs.vae = ["59", 0];
+      if (workflow["19"]) workflow["19"].inputs.vae = ["59", 0];
     }
 
     // default pos and neg to ksampler
@@ -1767,19 +1800,30 @@ class ComfyUI {
       startIndex: (vae.vae_override && vae.vae !== 'None')?59:58,
       now_pos:    53,
       now_neg:    3,
-      refiner:    refiner.enable,
+      refiner:    refinerActive,
       ref_pos:    57,
       ref_neg:    40,
-      hiresfix:   hifix.enable
+      hiresFix:   hifix.enable
     };
     const { workflowCN, indexCN } = applyControlnet(workflow, controlnet, workflowInfo);
 
     workflowInfo = {
       startIndex: indexCN,
-      refiner:    refiner.enable,
-      hiresfix:   hifix.enable
+      refiner:    refinerActive,
+      hiresFix:   hifix.enable
     };
     workflow = applyADetailer(workflowCN, adetailer, workflowInfo);
+
+    if (!hifix.enable) {
+      pruneWorkflowNodes(workflow, [25, 27, 19, 20, 18, 28, 58]);
+    } else if (skipColorTransfer && !hasActiveADetailer(adetailer)) {
+      pruneWorkflowNodes(workflow, [28]);
+    }
+
+    if (!refinerActive) {
+      pruneWorkflowNodes(workflow, [37, 39, 40, 41, 43, 44, 54, 55, 56, 57]);
+    }
+
     return workflow;
   }
 
@@ -1886,6 +1930,8 @@ class ComfyUI {
     workflow["52"].inputs.strength = regional.str_right;
     workflow["52"].inputs.set_cond_area = regional.option_right;
 
+    const skipColorTransfer = hifix.enable && hifix.colorTransfer === 'None';
+
     if (hifix.enable) {
       // Set Hires fix seed and denoise
       workflow["20"].inputs.seed = hifix.seed;
@@ -1921,9 +1967,9 @@ class ComfyUI {
         workflow["27"].inputs.model_name = `${hifix.model}`;
       }
 
-      if(hifix.colorTransfer === 'None'){
-          // Image Save set to 2nd VAE Decode (Tiled)
-          workflow["29"].inputs.images = ["18", 0];
+      if(skipColorTransfer){
+          // Image Save set to hires VAE Decode
+          workflow["29"].inputs.images = ["63", 0];
       } else {
           // Default to Image Color Transfer
           workflow["28"].inputs.method = hifix.colorTransfer;
@@ -1940,11 +1986,328 @@ class ComfyUI {
       clip:       60,
       vae:        61,
       colorTransfer: 28,
-      hiresfix:   hifix.enable
+      hiresFix:   hifix.enable
     };
 
     workflow = applyADetailerUnet(workflow, adetailer, workflowInfo);
     applySageFp16Switch(workflow, '59', generateData?.forge_dtype);
+
+    if (!hifix.enable) {
+      pruneWorkflowNodes(workflow, [25, 27, 62, 20, 63, 28]);
+    } else if (skipColorTransfer && !hasActiveADetailer(adetailer)) {
+      pruneWorkflowNodes(workflow, [28]);
+    }
+
+    return workflow;
+  }
+
+  // eslint-disable-next-line sonarjs/cognitive-complexity
+  createWorkflowHiresFromImage(generateData) {
+    const {addr, auth, uuid, refresh, positive, negative,
+      width, height, cfg, step, seed, sampler, scheduler,
+      model, vpred, unet, hifix, vae, img_prefix, imageData} = generateData;
+
+    this.addr = addr;
+    this.refresh = refresh;
+    this.auth = auth;
+    this.uuid = uuid;
+
+    const workflow = structuredClone(WORKFLOW_HIRES_I2I);
+    const useUnet = Boolean(unet?.enable);
+    const skipColorTransfer = hifix.colorTransfer === 'None';
+    const useLatentUpscale = Boolean(hifix?.model?.includes('Latent'));
+    const outW = Math.max(1, Math.round(Number(width) * Number(hifix.scale || 1)));
+    const outH = Math.max(1, Math.round(Number(height) * Number(hifix.scale || 1)));
+
+    workflow['1'].inputs.base64text = imageData;
+    workflow['32'].inputs.text = positive;
+    workflow['33'].inputs.text = negative;
+
+    workflow['29'].inputs.seed_value = seed;
+    workflow['29'].inputs.steps = step;
+    workflow['29'].inputs.cfg = cfg;
+    workflow['29'].inputs.sampler_name = sampler;
+    workflow['29'].inputs.scheduler = scheduler;
+    workflow['29'].inputs.path = img_prefix;
+    workflow['29'].inputs.width = outW;
+    workflow['29'].inputs.height = outH;
+    workflow['29'].inputs.denoise = hifix.denoise;
+
+    workflow['20'].inputs.seed = hifix.seed;
+    workflow['20'].inputs.steps = hifix.steps;
+    workflow['20'].inputs.cfg = cfg;
+    workflow['20'].inputs.sampler_name = sampler;
+    workflow['20'].inputs.scheduler = scheduler;
+    workflow['20'].inputs.denoise = hifix.denoise;
+
+    if (useUnet) {
+      delete workflow['35'];
+      delete workflow['45'];
+
+      if (unet.model.endsWith('.gguf')) {
+        workflow['51'] = {
+          inputs: { gguf_name: unet.model },
+          class_type: 'LoaderGGUF',
+          _meta: { title: 'GGUF Loader' }
+        };
+      } else {
+        workflow['51'] = {
+          inputs: {
+            unet_name: unet.model,
+            weight_dtype: diffusionLoaderDtype(unet.dtype)
+          },
+          class_type: 'UNETLoader',
+          _meta: { title: 'Load Diffusion Model' }
+        };
+      }
+
+      if (unet.clip_model.endsWith('.gguf')) {
+        workflow['50'] = {
+          inputs: {
+            clip_name: unet.clip_model,
+            type: unet.clip_type,
+            device: unet.clip_device
+          },
+          class_type: 'ClipLoaderGGUF',
+          _meta: { title: 'GGUF CLIP Loader' }
+        };
+      } else {
+        workflow['50'] = {
+          inputs: {
+            clip_name: unet.clip_model,
+            type: unet.clip_type,
+            device: unet.clip_device
+          },
+          class_type: 'CLIPLoader',
+          _meta: { title: 'Load CLIP' }
+        };
+      }
+
+      workflow['52'] = {
+        inputs: { vae_name: unet.vae_model },
+        class_type: 'VAELoader',
+        _meta: { title: 'Load VAE' }
+      };
+
+      workflow['34'].inputs.model = ['51', 0];
+      workflow['34'].inputs.clip = ['50', 0];
+      workflow['18'].inputs.vae = ['52', 0];
+      workflow['19'].inputs.vae = ['52', 0];
+      workflow['29'].inputs.modelname = unet.model;
+
+      if (unet.clip_type == 'moss_image') {
+        // Avoid 1 (image in) and 4 (Sage FP16 switch id).
+        applyMossSkipLayer(workflow, '51', '34', generateData.skip_layer, '7');
+      }
+      applySageFp16Switch(workflow, '51', generateData?.forge_dtype);
+    } else {
+      if (model && model !== 'Default') {
+        workflow['45'].inputs.ckpt_name = model;
+        workflow['29'].inputs.modelname = model;
+      }
+
+      if ((vpred === 0 && (model?.includes('vPred') || model?.includes('VPR'))) || vpred === 1 || vpred === 2) {
+        workflow['35'].inputs.sampling = 'v_prediction';
+        if (vpred === 2) {
+          workflow['35'].inputs.zsnr = true;
+        }
+      }
+
+      if (vae?.vae_override && vae.vae !== 'None') {
+        workflow['47'] = structuredClone(VAE_LOADER);
+        workflow['47'].inputs.vae_name = vae.vae;
+        workflow['18'].inputs.vae = ['47', 0];
+        workflow['19'].inputs.vae = ['47', 0];
+      }
+      // Same Turing FP16 path as Diffusion: wrap checkpoint MODEL output.
+      applySageFp16Switch(workflow, '45', generateData?.forge_dtype);
+    }
+
+    if (useLatentUpscale) {
+      const match = hifix.model.match(/\(([^)]+)\)/); // NOSONAR S8786
+      const latentMethod = match ? match[1].trim() : 'nearest-exact';
+      workflow['19'].inputs.pixels = ['1', 0];
+      workflow['46'].inputs.upscale_method = latentMethod;
+      workflow['46'].inputs.scale_by = hifix.scale;
+      workflow['20'].inputs.latent_image = ['46', 0];
+      pruneWorkflowNodes(workflow, [25, 27]);
+    } else {
+      workflow['25'].inputs.resize_scale = hifix.scale;
+      workflow['27'].inputs.model_name = `${hifix.model}`;
+      pruneWorkflowNodes(workflow, [46]);
+    }
+
+    if (skipColorTransfer) {
+      workflow['29'].inputs.images = ['18', 0];
+      pruneWorkflowNodes(workflow, [28]);
+    } else {
+      workflow['28'].inputs.method = hifix.colorTransfer;
+    }
+
+    return workflow;
+  }
+
+  // eslint-disable-next-line sonarjs/cognitive-complexity
+  createWorkflowAdetailerFromImage(generateData) {
+    const {addr, auth, uuid, refresh, positive, negative,
+      width, height, cfg, step, seed, sampler, scheduler,
+      model, unet, adetailer, vae, img_prefix, imageData} = generateData;
+
+    this.addr = addr;
+    this.refresh = refresh;
+    this.auth = auth;
+    this.uuid = uuid;
+
+    const useUnet = Boolean(unet?.enable);
+    let modelName = 'model.safetensors';
+    if (useUnet) {
+      modelName = unet.model;
+    } else if (model && model !== 'Default') {
+      modelName = model;
+    }
+
+    let workflow = {
+      '1': {
+        inputs: { base64text: imageData },
+        class_type: 'GzippedBase64ToImage',
+        _meta: { title: 'Gzipped Base64 To Image' }
+      },
+      '29': {
+        inputs: {
+          filename: '%time_%seed',
+          path: img_prefix || '%date',
+          extension: 'png',
+          steps: step,
+          cfg,
+          modelname: modelName,
+          sampler_name: sampler,
+          scheduler,
+          positive: ['32', 0],
+          negative: ['33', 0],
+          seed_value: seed,
+          width,
+          height,
+          lossless_webp: true,
+          quality_jpeg_or_webp: 100,
+          optimize_png: false,
+          counter: 0,
+          denoise: 1,
+          clip_skip: -2,
+          time_format: '%Y-%m-%d-%H%M%S',
+          save_workflow_as_json: false,
+          embed_workflow: true,
+          additional_hashes: '',
+          images: ['1', 0]
+        },
+        class_type: 'ImageSaverMira',
+        _meta: { title: 'Image Saver' }
+      },
+      '32': {
+        inputs: { text: positive || '' },
+        class_type: 'TextBoxMira',
+        _meta: { title: 'Text Box' }
+      },
+      '33': {
+        inputs: { text: negative || '' },
+        class_type: 'TextBoxMira',
+        _meta: { title: 'Text Box' }
+      }
+    };
+
+    if (useUnet) {
+      if (unet.model.endsWith('.gguf')) {
+        workflow['51'] = {
+          inputs: { gguf_name: unet.model },
+          class_type: 'LoaderGGUF',
+          _meta: { title: 'GGUF Loader' }
+        };
+      } else {
+        workflow['51'] = {
+          inputs: {
+            unet_name: unet.model,
+            weight_dtype: diffusionLoaderDtype(unet.dtype)
+          },
+          class_type: 'UNETLoader',
+          _meta: { title: 'Load Diffusion Model' }
+        };
+      }
+
+      if (unet.clip_model.endsWith('.gguf')) {
+        workflow['50'] = {
+          inputs: {
+            clip_name: unet.clip_model,
+            type: unet.clip_type,
+            device: unet.clip_device
+          },
+          class_type: 'ClipLoaderGGUF',
+          _meta: { title: 'GGUF CLIP Loader' }
+        };
+      } else {
+        workflow['50'] = {
+          inputs: {
+            clip_name: unet.clip_model,
+            type: unet.clip_type,
+            device: unet.clip_device
+          },
+          class_type: 'CLIPLoader',
+          _meta: { title: 'Load CLIP' }
+        };
+      }
+
+      workflow['52'] = {
+        inputs: { vae_name: unet.vae_model },
+        class_type: 'VAELoader',
+        _meta: { title: 'Load VAE' }
+      };
+
+      // Stub LoRAfromText so moss skip / sage can retarget a model consumer.
+      workflow['34'] = {
+        inputs: {
+          text: ['32', 0],
+          model: ['51', 0],
+          clip: ['50', 0]
+        },
+        class_type: 'LoRAfromText',
+        _meta: { title: 'LoRA Loader from Text' }
+      };
+
+      if (unet.clip_type == 'moss_image') {
+        applyMossSkipLayer(workflow, '51', '34', generateData.skip_layer, '7');
+      }
+      applySageFp16Switch(workflow, '51', generateData?.forge_dtype);
+
+      workflow = applyADetailerUnet(workflow, adetailer, {
+        startIndex: 60,
+        model: '34',
+        clip: 50,
+        vae: 52,
+        hiresFix: false,
+        imageNode: '1'
+      });
+    } else {
+      workflow['45'] = {
+        inputs: { ckpt_name: modelName },
+        class_type: 'CheckpointLoaderSimple',
+        _meta: { title: 'Load Checkpoint' }
+      };
+
+      let vaeNode = null;
+      if (vae?.vae_override && vae.vae !== 'None') {
+        workflow['47'] = structuredClone(VAE_LOADER);
+        workflow['47'].inputs.vae_name = vae.vae;
+        vaeNode = '47';
+      }
+
+      workflow = applyADetailer(workflow, adetailer, {
+        startIndex: 60,
+        refiner: false,
+        hiresFix: false,
+        imageNode: '1',
+        vaeNode
+      });
+      applySageFp16Switch(workflow, '45', generateData?.forge_dtype);
+    }
+
     return workflow;
   }
 
@@ -2514,8 +2877,8 @@ class ComfyUI {
         workflow["14"].inputs.width = taggerOptions.imageWidth;
         workflow["14"].inputs.height = taggerOptions.imageHeight;
 
-        // Disconnect upscale and delete nodes
-        delete workflow["2"];
+        // Disconnect upscale and delete unused main ITU path
+        pruneWorkflowNodes(workflow, [2, 20, 21, 18, 22, 23, 19]);
       } else {
         // Connect pre-bake to Upscale
         workflow["2"].inputs.image = ["31", 0];
@@ -2659,13 +3022,20 @@ async function runComfyUI(generateData) {
   const backend = started.backend;
 
   let workflow;
-  if (generateData.unet?.enable){
+  if (generateData.adFromImage) {
+    workflow = backend.createWorkflowAdetailerFromImage(generateData);
+    backend.timeout = generateData.unet?.enable ? 15000 : TIMEOUT;
+  } else if (generateData.hiresFromImage) {
+    workflow = backend.createWorkflowHiresFromImage(generateData);
+    backend.timeout = generateData.unet?.enable ? 15000 : TIMEOUT;
+  } else if (generateData.unet?.enable){
     workflow = backend.createWorkflowUNet(generateData);
     backend.timeout = 15000;
   } else {
     workflow = backend.createWorkflow(generateData);
     backend.timeout = TIMEOUT;
   }
+  workflow = applyOverrideVae(workflow, generateData?.forge_dtype);
   
   if(backend.uuid !== 'none')
     console.log(CAT, 'Running ComfyUI with uuid:', backend.uuid);
@@ -2690,6 +3060,7 @@ async function runComfyUI_Regional(generateData) {
     workflow = backend.createWorkflowRegional(generateData);
     backend.timeout = TIMEOUT;
   }
+  workflow = applyOverrideVae(workflow, generateData?.forge_dtype);
   
   if(backend.uuid !== 'none')
     console.log(CAT, 'Running ComfyUI Regional with uuid:', backend.uuid);
@@ -2715,6 +3086,7 @@ async function runComfyUI_MiraITU(generateData){
     workflow = backend.createWorkflowMiraITU_Unet(generateData);    
     backend.timeout = 15000;
   }
+  workflow = applyOverrideVae(workflow, generateData?.forge_dtype);
 
   if(backend.uuid !== 'none')
     console.log(CAT, 'Running ComfyUI MiraITU with uuid:', backend.uuid);
@@ -2729,7 +3101,8 @@ async function runComfyUI_ControlNet(generateData){
   }
   const backend = started.backend;
 
-  const workflow = backend.createWorkflowControlnet(generateData)
+  let workflow = backend.createWorkflowControlnet(generateData);
+  workflow = applyOverrideVae(workflow, generateData?.forge_dtype);
   backend.timeout = TIMEOUT;
   console.log(CAT, 'Running ComfyUI ControlNet with uuid:', backend.uuid);
   const result = await backend.run(workflow);
@@ -2780,7 +3153,8 @@ async function python_runComfyUI(generateData, isRegional=false, skeletonKey=fal
     generateData.vae = { vae_override: false, vae: 'None' };
   }
 
-  const workflow = isRegional ? backend.createWorkflowRegional(generateData) : backend.createWorkflow(generateData);
+  let workflow = isRegional ? backend.createWorkflowRegional(generateData) : backend.createWorkflow(generateData);
+  workflow = applyOverrideVae(workflow, generateData?.forge_dtype);
   backend.timeout = TIMEOUT;
   const result = await backend.run(workflow, true);
 

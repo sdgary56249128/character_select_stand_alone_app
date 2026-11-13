@@ -16,6 +16,7 @@ import { setupCollapsed, setupSaveSettingsToggle, setupDeleteSettingsToggle, set
     setupFuctionKeys, setupSwapToggle, reloadFiles, doSwap, createFavoriteHotkeyControls } from './renderer/components/myCollapsed.js';
 import { setupTextbox, setupInfoBox } from './renderer/components/myTextbox.js';
 import { setupFullPromptPreview } from './renderer/fullPromptPreview.js';
+import { setupAspectRatioLock } from './renderer/aspectRatioLock.js';
 import { from_main_updateGallery, from_main_updatePreview, from_main_customOverlayProgress } from './renderer/generate_backend.js';
 import { setupLoRA } from './renderer/slots/myLoRASlot.js';
 import { setupControlNet } from './renderer/slots/myControlNetSlot.js';
@@ -27,9 +28,9 @@ import { sendWebSocketMessage } from './webserver/front/wsRequest.js';
 import { setupImageUploadOverlay } from './renderer/imageInfo.js';
 import { setupThemeToggle } from './renderer/theme.js';
 import { setupRightClickMenu, addSpellCheckSuggestions } from './renderer/components/myRightClickMenu.js';
-import { extractHostPort, hashHiresSubmit, rememberHiresSubmit } from './renderer/generate.js';
+import { extractHostPort, hashHiresSubmit, rememberHiresSubmit, hasActiveAdSlots } from './renderer/generate.js';
 import { CLIP_TYPE, CLIP_DEVICE, DIFFUSION_DTYPE, FORGE_UNET_STORAGE_AUTOMATIC, SAMPLER_COMFYUI, SCHEDULER_COMFYUI, SAMPLER_WEBUI, SCHEDULER_WEBUI } from './types.js';
-import { normalizeDiffusionDtype, normalizeForgeStorageDtype } from './main/sageFp16Switch.js';
+import { normalizeDiffusionDtype, normalizeForgeStorageDtype, normalizeOverrideVaeMode, OVERRIDE_VAE_MODES } from './main/sageFp16Switch.js';
 import { flushSlots } from './renderer/slots/slotsManager.js';
 import { set_prompt_textBox_Heights } from './renderer/components/componentsManager.js';
 import { hiresCalculate } from './renderer/tools/hiresCalculation.js';
@@ -104,6 +105,13 @@ export async function setupHeader(SETTINGS, FILES, LANG){
             (value) => { callback_forge_fp16_switch('compute', value); }),
         forge_sage_fp16_cast: setupCheckbox('forge-sage-fp16-cast', LANG.api_forge_sage_fp16_cast, SETTINGS.api_forge_sage_fp16_cast === true, true,
             (value) => { callback_forge_fp16_switch('sage', value); }),
+        forge_override_vae: setupCheckbox('forge-override-vae', LANG.api_forge_override_vae, SETTINGS.api_forge_override_vae === true, true,
+            (value) => { callback_forge_fp16_switch('override_vae', value); }),
+        forge_override_vae_mode: mySimpleList('forge-override-vae-mode', LANG.api_forge_override_vae_mode || 'VAE Mode',
+            OVERRIDE_VAE_MODES.slice(),
+            (index, value) => {
+                globalThis.globalSettings.api_forge_override_vae_mode = normalizeOverrideVaeMode(value);
+            }, 5, false, true),
 
         textencoder: mySimpleList('text-encoder', LANG.api_text_encoder, FILES.textEncoderList,
             (index, value) => { globalThis.globalSettings.api_model_file_text_encoder = value; }, 20, true, true),
@@ -123,6 +131,11 @@ export async function setupHeader(SETTINGS, FILES, LANG){
     }
     globalThis.dropdownList.languageList.updateDefaults(LANG.language);
     globalThis.dropdownList.vpred.updateDefaults(SETTINGS.api_model_file_vpred);
+    const overrideVaeMode = normalizeOverrideVaeMode(SETTINGS.api_forge_override_vae_mode);
+    SETTINGS.api_forge_override_vae_mode = overrideVaeMode;
+    globalThis.dropdownList.forge_override_vae_mode.updateDefaults(overrideVaeMode);
+    const overrideVaeModeHost = document.querySelector('.forge-override-vae-mode');
+    if (overrideVaeModeHost) overrideVaeModeHost.hidden = SETTINGS.api_forge_override_vae !== true;
 
     globalThis.skipLayer = {
         double_layers: setupTextbox('skip-double-layers', LANG.skip_double_layers, {
@@ -216,8 +229,9 @@ export async function createGenerate(SETTINGS, FILES, LANG) {
         seed: setupSlider('generate-random-seed', LANG.random_seed, {min:-1, max:4294967295, step:1, defaultValue:SETTINGS.random_seed, fullGradient: true}, (value) =>{globalThis.globalSettings.random_seed = value;}),
         cfg: setupSlider('generate-cfg', LANG.cfg, {min:0, max:20, step:0.01, defaultValue:SETTINGS.cfg}, (value) =>{globalThis.globalSettings.cfg = value;}),
         step: setupSlider('generate-step', LANG.step, {min:1, max:100, step:1, defaultValue:SETTINGS.step}, (value) =>{globalThis.globalSettings.step = value;}),
-        width: setupSlider('generate-width', LANG.width, {min:512, max:4096, step:8, defaultValue:SETTINGS.width}, (value) =>{globalThis.globalSettings.width = value; hiresCalculate(); globalThis.bounding?.syncCanvas(); globalThis.bounding?.invalidatePreview?.(); }),
-        height: setupSlider('generate-height', LANG.height, {min:512, max:4096, step:8, defaultValue:SETTINGS.height}, (value) =>{globalThis.globalSettings.height = value; hiresCalculate(); globalThis.bounding?.syncCanvas(); globalThis.bounding?.invalidatePreview?.(); }),
+        aspectLock: setupAspectRatioLock('generate-aspect-lock', LANG.api_image_aspect_lock),
+        width: setupSlider('generate-width', LANG.width, {min:512, max:4096, step:8, defaultValue:SETTINGS.width}, (value) =>{ globalThis.generate.aspectLock.onWidthChange(value); }),
+        height: setupSlider('generate-height', LANG.height, {min:512, max:4096, step:8, defaultValue:SETTINGS.height}, (value) =>{ globalThis.generate.aspectLock.onHeightChange(value); }),
         batch: setupSlider('generate-batch', LANG.batch, {min:1, max:2038, step:1, defaultValue:SETTINGS.batch}, (value) =>{globalThis.globalSettings.batch = value;}),
         hifix: setupCheckbox('generate-hires-fix', LANG.api_hf_enable, SETTINGS.api_hf_enable, true, (value) => { globalThis.globalSettings.api_hf_enable = value; globalThis.generate.hifix_dummy.setValue(value);}),
         hifix_dummy: setupCheckbox('generate-hires-fix-dummy', LANG.api_hf_enable, SETTINGS.api_hf_enable, true, (value) => { globalThis.globalSettings.api_hf_enable = value; globalThis.generate.hifix.setValue(value);}),
@@ -230,7 +244,7 @@ export async function createGenerate(SETTINGS, FILES, LANG) {
             globalThis.bounding?.invalidatePreview?.();
         }),
 
-        landscape: setupCheckbox('generate-landscape', LANG.api_image_landscape, SETTINGS.api_image_landscape, true, (value) =>{globalThis.globalSettings.api_image_landscape = value; globalThis.bounding?.syncCanvas(); globalThis.bounding?.invalidatePreview?.(); }),
+        landscape: setupCheckbox('generate-landscape', LANG.api_image_landscape, SETTINGS.api_image_landscape, true, (value) =>{globalThis.globalSettings.api_image_landscape = value; globalThis.generate.aspectLock?.onLandscapeChange?.(); hiresCalculate(); globalThis.bounding?.syncCanvas(); globalThis.bounding?.invalidatePreview?.(); }),
         tag_assist: setupCheckbox('generate-tag-assist', LANG.tag_assist, SETTINGS.tag_assist, true, (value) =>{ globalThis.globalSettings.tag_assist = value; }),
         wildcard_random: setupCheckbox('generate-wildcard-random', LANG.wildcard_random, SETTINGS.wildcard_random, true, (value) =>{ globalThis.globalSettings.wildcard_random = value; }),
         sampler: mySimpleList('generate-sampler', LANG.api_model_sampler, ['Auto'], (index, value) =>{ globalThis.globalSettings.api_model_sampler = value; }, 20, false, false),
@@ -263,7 +277,7 @@ export async function createGenerate(SETTINGS, FILES, LANG) {
                     await callback_generate_start('normal', {loops:globalThis.generate.batch.getValue(), runSame:true});
                 }
             }]),
-        generate_hires: setupButtons('generate-button-hires', LANG.run_hires_button, {
+        generate_hires: setupSplitButton('generate-button-hires', LANG.run_hires_button, {
                 defaultColor: 'rgb(52, 112, 186)',
                 hoverColor: 'rgb(37, 90, 155)',
                 disabledColor: 'rgb(120, 138, 168)',
@@ -271,14 +285,52 @@ export async function createGenerate(SETTINGS, FILES, LANG) {
                 height: '100%',
                 hidden: false,
                 clickable: false,
-                title: LANG.run_hires_button_empty
+                title: LANG.run_hires_button_empty,
+                onBeforeOpenMenu: () => {
+                    globalThis.generate.generate_hires?.syncFromGallery?.();
+                }
             }, async () =>{
                 const seed = globalThis.mainGallery?.getHiresTargetSeed?.();
                 if (seed === null || seed === undefined) return;
                 const hash = hashHiresSubmit(seed);
                 if (!rememberHiresSubmit(hash)) return;
+                const apiInterface = globalThis.generate?.api_interface?.getValue?.();
+                if (apiInterface === 'ComfyUI') {
+                    const imageData = globalThis.mainGallery?.getDisplayedImage?.();
+                    if (!imageData) return;
+                    await callback_generate_start('normal', {
+                        loops: 1,
+                        runSame: false,
+                        hiresFromImage: true,
+                        seedOverride: seed,
+                        imageData,
+                    });
+                    return;
+                }
                 await callback_generate_start('normal', {loops:1, runSame:false, hiresOneShot:true, seedOverride: seed});
-            }),
+            }, [{
+                text: LANG.run_adetailer_button || 'ADetailer',
+                title: LANG.run_adetailer_button_tip || '',
+                clickable: false,
+                callback: async () => {
+                    const seed = globalThis.mainGallery?.getHiresTargetSeed?.();
+                    if (seed === null || seed === undefined) return;
+                    const apiInterface = globalThis.generate?.api_interface?.getValue?.();
+                    if (apiInterface !== 'ComfyUI') return;
+                    if (!hasActiveAdSlots()) return;
+                    const imageData = globalThis.mainGallery?.getDisplayedImage?.();
+                    if (!imageData) return;
+                    const hash = hashHiresSubmit(`ad:${seed}`);
+                    if (!rememberHiresSubmit(hash)) return;
+                    await callback_generate_start('normal', {
+                        loops: 1,
+                        runSame: false,
+                        adFromImage: true,
+                        seedOverride: seed,
+                        imageData,
+                    });
+                }
+            }]),
         generate_skip_current: setupSplitButton('generate-button-skip-current', LANG.run_skip_current_button, {
                 defaultColor: 'rgb(82,82,91)',
                 hoverColor: 'rgb(63,63,70)',
@@ -427,14 +479,27 @@ export async function createGenerate(SETTINGS, FILES, LANG) {
     globalThis.generate.generate_same = createSplitMenuApi(globalThis.generate.generate_batch, 0);
     globalThis.generate.generate_cancel = createSplitMenuApi(globalThis.generate.generate_skip_current, 0);
     globalThis.generate.generate_skip = createSplitMenuApi(globalThis.generate.generate_skip_current, 1);
+    globalThis.generate.generate_adetailer = createSplitMenuApi(globalThis.generate.generate_hires, 0);
 
     globalThis.generate.generate_hires.syncFromGallery = function () {
         const seed = globalThis.mainGallery?.getHiresTargetSeed?.();
         const hasImage = seed !== null && seed !== undefined;
         const files = globalThis.cachedFiles;
         const lang = files?.language?.[globalThis.globalSettings.language] || LANG;
+        const apiInterface = globalThis.generate?.api_interface?.getValue?.() || globalThis.globalSettings.api_interface;
+        const adReady = apiInterface === 'ComfyUI' && hasActiveAdSlots();
         globalThis.generate.generate_hires.setClickable(hasImage);
         globalThis.generate.generate_hires.setTooltip(hasImage ? lang.run_hires_button_tip : lang.run_hires_button_empty);
+        globalThis.generate.generate_hires.setChevronVisibility?.(adReady);
+        globalThis.generate.generate_adetailer?.setTitle?.(lang.run_adetailer_button || 'ADetailer');
+        globalThis.generate.generate_adetailer?.setClickable?.(adReady && hasImage);
+        let adTooltip = lang.run_adetailer_button_empty;
+        if (!adReady) {
+            adTooltip = lang.run_adetailer_button_unavailable || '';
+        } else if (hasImage) {
+            adTooltip = lang.run_adetailer_button_tip;
+        }
+        globalThis.generate.generate_adetailer?.setTooltip?.(adTooltip);
     };
     globalThis.generate.generate_hires.syncFromGallery();
 
@@ -450,6 +515,8 @@ export async function createGenerate(SETTINGS, FILES, LANG) {
         applyWsServiceSettings();
         applySaacReadonlyUi();
     }
+
+    globalThis.generate.aspectLock?.restoreFromSettings?.(SETTINGS);
 }
 
 export async function createPrompt(SETTINGS, FILES, LANG) {
@@ -565,7 +632,8 @@ async function init(){
         adetailer: false,
         regional_forge_neo: false,
         sage_fp16: false,
-        sage_fp16_webui: false
+        sage_fp16_webui: false,
+        override_vae: false
     };    
 
     try {

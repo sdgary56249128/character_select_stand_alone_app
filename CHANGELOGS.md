@@ -1,3 +1,33 @@
+2026.11.10 v2.12.2      
+Add, ComfyUI gallery `Hires Fix` as a one-shot i2i pass (uses the gallery image + current UI model; leaves toggle-on Hires during normal generate unchanged)      
+Add, ComfyUI gallery `ADetailer` via the Hires split menu when AD is enabled and slots are active      
+Change, gallery Hires / AD follow `FP16 Compute`, `Sage Attention`, and `Override VAE`      
+Fix, Override VAE for FaceDetailer: insert MiraSubPack `VAESafePassthrough` on the AD VAE socket (Impact encodes/decodes in-process; graph VAE rewrites cannot see them)      
+Fix, switching settings restores ControlNet / ADetailer enable switches (and refreshes the Hires AD menu)      
+Docs, ComfyUI gallery Hires / AD and FaceDetailer Override VAE notes in README      
+
+
+2026.11.09 v2.12.1      
+Add, Gallery `A|B Compare` — pin two images (gallery or Image Info externals), slider wipe (left/right or top/bottom), same-spot toggle, shared pan/zoom, embedded or in-app fullscreen      
+Add, gallery chrome `+A` / `+B` / `✕A|B`, dual Seed/Tags/Info, `<>` switches wipe vs toggle, toolbar `↔`/`↕` switches wipe axis; Hires Fix disabled in compare; new gens still enqueue without stealing the view      
+Add, Image Info `Add A` / `Add B` for external compare (metadata seed/tags/info); exit compare releases externals; right-click set A/B; compare overlay skips copy/remove      
+Add, release GPU tagger sessions (best-effort CPU cache) when closing Image Info or starting Generate / ControlNet      
+Fix, Image Tagger GPU path on Windows via DirectML (`enableMemPattern` off, fixed free dims, session reuse + warmup in a persistent worker); GPU first with CPU fallback      
+Fix, idle tagger promotes the selected model to GPU (single GPU slot); generating prefers CPU; CPU caches up to 3 recent ONNX models (~5 min idle expiry); unused GPU models release after ~2 min       
+Docs, Gallery A|B Compare note in README Highlights; update Image Tagger ONNX / offload notes      
+
+
+2026.11.08 v2.12.0      
+Add, ComfyUI `Override VAE` (Model panel) for Turing/Pascal Flux2 VAEDecode crashes (Moss / Flux2 Klein); uses MiraSubPack encode/decode      
+Change, prune unused hires/refiner dead-path nodes from ComfyUI workflows      
+Docs, Turing FP16 / Override VAE notes in README and switch help text      
+
+
+2026.11.08 v2.11.4      
+Add, Image panel `Aspect Lock` between Width and Height       
+Add, ratio/size previews in the picker; display follows `Landscape` while the same values are written to Width/Height      
+Minor bugs fix      
+
 2026.11.05 v2.11.3      
 Add, `Bounding Box` `Add` inserts a default rectangle when empty canvas space is hard to hit      
 Add, Prompt `full prompt preview` — hover the label for a colored final-prompt overlay; check to pin (session-only, resets when switching settings)      

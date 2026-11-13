@@ -139,6 +139,14 @@ export function callback_forge_fp16_switch(which, value) {
     const settings = globalThis.globalSettings;
     if (!settings) return;
     const on = value === true;
+
+    if (which === 'override_vae') {
+        settings.api_forge_override_vae = on;
+        syncOverrideVaeModeVisibility(on);
+        if (on) notifyOverrideVae();
+        return;
+    }
+
     if (which === 'sage') settings.api_forge_sage_fp16_cast = on;
     else settings.api_forge_compute_fp16 = on;
 
@@ -149,6 +157,26 @@ export function callback_forge_fp16_switch(which, value) {
         }
         if (on) notifySageFp16Cast(which === 'sage' ? 'Sage_FP16' : 'PyTorch_FP16');
     }
+}
+
+function syncOverrideVaeModeVisibility(enabled) {
+    const host = document.querySelector('.forge-override-vae-mode');
+    if (host) host.hidden = !enabled;
+}
+
+export function notifyOverrideVae() {
+    const settings = globalThis.globalSettings;
+    if (settings?.api_interface === 'WebUI') return;
+    const flag = 'override_vae';
+    if (!globalThis.custom_message || globalThis.custom_message[flag]) return;
+
+    const lang = globalThis.cachedFiles?.language?.[settings?.language];
+    const message = lang?.message_override_vae;
+    const link = lang?.message_override_vae_link;
+    if (!message || !globalThis.overlay?.custom?.createErrorOverlay) return;
+
+    globalThis.custom_message[flag] = true;
+    globalThis.overlay.custom.createErrorOverlay(message, link);
 }
 
 export function notifySageFp16Cast(value) {
@@ -175,6 +203,11 @@ function syncForgeFp16Switches() {
     const settings = globalThis.globalSettings;
     globalThis.dropdownList?.forge_compute_fp16?.setValue(settings?.api_forge_compute_fp16 === true);
     globalThis.dropdownList?.forge_sage_fp16_cast?.setValue(settings?.api_forge_sage_fp16_cast === true);
+    const overrideOn = settings?.api_forge_override_vae === true;
+    globalThis.dropdownList?.forge_override_vae?.setValue(overrideOn);
+    const mode = settings?.api_forge_override_vae_mode || 'auto';
+    globalThis.dropdownList?.forge_override_vae_mode?.updateDefaults?.(mode);
+    syncOverrideVaeModeVisibility(overrideOn);
 }
 
 function syncDiffusionDtypeMenu(modelType) {
@@ -297,6 +330,7 @@ export async function callback_api_interface(index, selectedValue){
     globalThis.hifix.model.setValue(LANG.api_hf_upscaler_selected, globalThis.cachedFiles.upscalerList);
 
     syncDiffusionDtypeMenu(globalThis.globalSettings.api_model_type);
+    globalThis.generate.generate_hires?.syncFromGallery?.();
 }
 
 export async function callback_myCharacterList_updateThumb(){
@@ -364,7 +398,8 @@ export async function callback_generate_start(runType='normal', dataPack=null){
     globalThis.generate.generate_cancel.setClickable(true);
 
     if (runType === 'normal') {
-        if(globalThis.globalSettings.regional_condition) {
+        // Gallery one-shot pipelines use the displayed image; skip regional dual-prompt path.
+        if(globalThis.globalSettings.regional_condition && !dataPack?.hiresFromImage && !dataPack?.adFromImage) {
             await generateRegionalImage(dataPack);
         } else {
             await generateImage(dataPack);
@@ -517,20 +552,21 @@ export function callback_controlnet(trigger)  {
     globalThis.custom_message.controlnet = true;
 }
 
-export function callback_adetailer(trigger)  {                
+export function callback_adetailer(trigger)  {
     const SETTINGS = globalThis.globalSettings;
     const FILES = globalThis.cachedFiles;
     const LANG = FILES.language[SETTINGS.language];
     const apiInterface = globalThis.generate.api_interface.getValue();
 
-    globalThis.globalSettings.api_adetailer_enable = trigger; 
+    globalThis.globalSettings.api_adetailer_enable = trigger;
+    globalThis.generate.generate_hires?.syncFromGallery?.();
 
     if(globalThis.custom_message.adetailer)
         return;
 
-    if(trigger && apiInterface === 'ComfyUI') {        
+    if(trigger && apiInterface === 'ComfyUI') {
         globalThis.overlay.custom.createErrorOverlay(LANG.message_adetailer_comfyui, LANG.message_adetailer_comfyui_link);
-    }    
+    }
     if(trigger && apiInterface === 'WebUI') {
         globalThis.overlay.custom.createErrorOverlay(LANG.message_adetailer_webui , LANG.message_adetailer_webui_link);
     }

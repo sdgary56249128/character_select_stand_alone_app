@@ -1402,7 +1402,12 @@ export const WORKFLOW_MIRA_ITU = {
       "vae": [
         "6",
         2
-      ]
+      ],
+      "mode": "direct",
+      "tile_size": 512,
+      "overlap": 64,
+      "temporal_size": 64,
+      "temporal_overlap": 8
     },
     "class_type": "VAEEncode_MiraSubPack",
     "_meta": {
@@ -1418,7 +1423,12 @@ export const WORKFLOW_MIRA_ITU = {
       "vae": [
         "6",
         2
-      ]
+      ],
+      "mode": "direct",
+      "tile_size": 512,
+      "overlap": 64,
+      "temporal_size": 64,
+      "temporal_overlap": 8
     },
     "class_type": "VAEDecode_MiraSubPack",
     "_meta": {
@@ -2419,7 +2429,12 @@ export const WORKFLOW_MIRA_ITU_UNET = {
       "vae": [
         "26",
         0
-      ]
+      ],
+      "mode": "direct",
+      "tile_size": 512,
+      "overlap": 64,
+      "temporal_size": 64,
+      "temporal_overlap": 8
     },
     "class_type": "VAEEncode_MiraSubPack",
     "_meta": {
@@ -2435,7 +2450,12 @@ export const WORKFLOW_MIRA_ITU_UNET = {
       "vae": [
         "26",
         0
-      ]
+      ],
+      "mode": "direct",
+      "tile_size": 512,
+      "overlap": 64,
+      "temporal_size": 64,
+      "temporal_overlap": 8
     },
     "class_type": "VAEDecode_MiraSubPack",
     "_meta": {
@@ -2566,7 +2586,12 @@ export const WORKFLOW_MIRA_ITU_UNET_PREBAKE = {
       "vae": [
         "26",
         0
-      ]
+      ],
+      "mode": "direct",
+      "tile_size": 512,
+      "overlap": 64,
+      "temporal_size": 64,
+      "temporal_overlap": 8
     },
     "class_type": "VAEEncode_MiraSubPack",
     "_meta": {
@@ -2582,7 +2607,12 @@ export const WORKFLOW_MIRA_ITU_UNET_PREBAKE = {
       "vae": [
         "26",
         0
-      ]
+      ],
+      "mode": "direct",
+      "tile_size": 512,
+      "overlap": 64,
+      "temporal_size": 64,
+      "temporal_overlap": 8
     },
     "class_type": "VAEDecode_MiraSubPack",
     "_meta": {
@@ -2607,6 +2637,273 @@ export const WORKFLOW_MIRA_ITU_UNET_PREBAKE = {
     "class_type": "TiledImageColorCorrection_MiraSubPack",
     "_meta": {
       "title": "Tiled Image Color Correction"
+    }
+  }
+};
+
+// Shared hires-from-image body (loaders attached at runtime: Checkpoint or Diffusion)
+export const WORKFLOW_HIRES_I2I = {
+  "1": {
+    "inputs": {
+      "base64text": ""
+    },
+    "class_type": "GzippedBase64ToImage",
+    "_meta": {
+      "title": "Gzipped Base64 To Image"
+    }
+  },
+  "2": {
+    "inputs": {
+      "text": [
+        "34",
+        4
+      ],
+      "clip": [
+        "34",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    }
+  },
+  "3": {
+    "inputs": {
+      "text": [
+        "33",
+        0
+      ],
+      "clip": [
+        "34",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    }
+  },
+  "18": {
+    "inputs": {
+      "samples": [
+        "20",
+        0
+      ],
+      "vae": [
+        "45",
+        2
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "19": {
+    "inputs": {
+      "pixels": [
+        "25",
+        0
+      ],
+      "vae": [
+        "45",
+        2
+      ]
+    },
+    "class_type": "VAEEncode",
+    "_meta": {
+      "title": "VAE Encode"
+    }
+  },
+  "20": {
+    "inputs": {
+      "seed": 0,
+      "steps": 20,
+      "cfg": 7,
+      "sampler_name": "euler_ancestral",
+      "scheduler": "normal",
+      "denoise": 0.4,
+      "model": [
+        "34",
+        0
+      ],
+      "positive": [
+        "2",
+        0
+      ],
+      "negative": [
+        "3",
+        0
+      ],
+      "latent_image": [
+        "19",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "KSampler"
+    }
+  },
+  "25": {
+    "inputs": {
+      "resize_scale": 1.5,
+      "resize_method": "lanczos",
+      "upscale_model": [
+        "27",
+        0
+      ],
+      "image": [
+        "1",
+        0
+      ]
+    },
+    "class_type": "UpscaleImageByModelThenResize",
+    "_meta": {
+      "title": "Upscale Image By Model Then Resize"
+    }
+  },
+  "27": {
+    "inputs": {
+      "model_name": "RealESRGAN_x4plus_anime_6B.pth"
+    },
+    "class_type": "UpscaleModelLoader",
+    "_meta": {
+      "title": "Load Upscale Model"
+    }
+  },
+  "28": {
+    "inputs": {
+      "method": "Mean",
+      "src_image": [
+        "18",
+        0
+      ],
+      "ref_image": [
+        "1",
+        0
+      ]
+    },
+    "class_type": "ImageColorTransferMira",
+    "_meta": {
+      "title": "Color Transfer"
+    }
+  },
+  "29": {
+    "inputs": {
+      "filename": "%time_%seed",
+      "path": "%date",
+      "extension": "png",
+      "steps": 20,
+      "cfg": 7,
+      "modelname": "model.safetensors",
+      "sampler_name": "euler_ancestral",
+      "scheduler": "normal",
+      "positive": [
+        "32",
+        0
+      ],
+      "negative": [
+        "33",
+        0
+      ],
+      "seed_value": 0,
+      "width": 1024,
+      "height": 1360,
+      "lossless_webp": true,
+      "quality_jpeg_or_webp": 100,
+      "optimize_png": false,
+      "counter": 0,
+      "denoise": 1,
+      "clip_skip": -2,
+      "time_format": "%Y-%m-%d-%H%M%S",
+      "save_workflow_as_json": false,
+      "embed_workflow": true,
+      "additional_hashes": "",
+      "images": [
+        "28",
+        0
+      ]
+    },
+    "class_type": "ImageSaverMira",
+    "_meta": {
+      "title": "Image Saver"
+    }
+  },
+  "32": {
+    "inputs": {
+      "text": ""
+    },
+    "class_type": "TextBoxMira",
+    "_meta": {
+      "title": "Text Box"
+    }
+  },
+  "33": {
+    "inputs": {
+      "text": ""
+    },
+    "class_type": "TextBoxMira",
+    "_meta": {
+      "title": "Text Box"
+    }
+  },
+  "34": {
+    "inputs": {
+      "text": [
+        "32",
+        0
+      ],
+      "model": [
+        "35",
+        0
+      ],
+      "clip": [
+        "45",
+        1
+      ]
+    },
+    "class_type": "LoRAfromText",
+    "_meta": {
+      "title": "LoRA Loader from Text"
+    }
+  },
+  "35": {
+    "inputs": {
+      "sampling": "eps",
+      "zsnr": false,
+      "model": [
+        "45",
+        0
+      ]
+    },
+    "class_type": "ModelSamplingDiscrete",
+    "_meta": {
+      "title": "ModelSamplingDiscrete"
+    }
+  },
+  "45": {
+    "inputs": {
+      "ckpt_name": "waiIllustriousSDXL_v160.safetensors"
+    },
+    "class_type": "CheckpointLoaderSimple",
+    "_meta": {
+      "title": "Load Checkpoint"
+    }
+  },
+  "46": {
+    "inputs": {
+      "samples": [
+        "19",
+        0
+      ],
+      "upscale_method": "nearest-exact",
+      "scale_by": 1.5
+    },
+    "class_type": "LatentUpscaleBy",
+    "_meta": {
+      "title": "Upscale Latent By"
     }
   }
 };

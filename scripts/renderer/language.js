@@ -72,6 +72,8 @@ export function updateLanguage(skipLoRA = false, skipRightClick = false) {
     );
     globalThis.dropdownList.forge_compute_fp16?.setTitle(LANG.api_forge_compute_fp16 || 'FP16 Compute (Turing 20)');
     globalThis.dropdownList.forge_sage_fp16_cast?.setTitle(LANG.api_forge_sage_fp16_cast || 'Sage Attention (Turing 20)');
+    globalThis.dropdownList.forge_override_vae?.setTitle(LANG.api_forge_override_vae || 'Override VAE (ComfyUI Flux2 / Turing·Pascal)');
+    globalThis.dropdownList.forge_override_vae_mode?.setTitle(LANG.api_forge_override_vae_mode || 'VAE Mode');
     globalThis.dropdownList.textencoder.setTitle(LANG.api_text_encoder);
     globalThis.dropdownList.textencoder_type.setTitle(LANG.api_text_encoder_type);
     globalThis.dropdownList.textencoder_device.setTitle(LANG.api_text_encoder_device);
@@ -125,6 +127,7 @@ export function updateLanguage(skipLoRA = false, skipRightClick = false) {
     globalThis.generate.step.setTitle(LANG.step);
     globalThis.generate.width.setTitle(LANG.width);
     globalThis.generate.height.setTitle(LANG.height);
+    globalThis.generate.aspectLock?.setTitle?.(LANG.api_image_aspect_lock);
     globalThis.generate.batch.setTitle(LANG.batch);
 
     globalThis.generate.hifix.setTitle(LANG.api_hf_enable);
@@ -148,6 +151,7 @@ export function updateLanguage(skipLoRA = false, skipRightClick = false) {
     globalThis.generate.generate_batch.setTooltip?.(LANG.run_random_button);
     globalThis.generate.generate_same.setTitle(LANG.run_same_button);
     globalThis.generate.generate_hires.setTitle(LANG.run_hires_button);
+    globalThis.generate.generate_adetailer?.setTitle?.(LANG.run_adetailer_button);
     globalThis.generate.generate_hires.syncFromGallery?.();
     globalThis.generate.generate_cancel.setTitle(LANG.run_cancel_button);
     globalThis.generate.generate_skip.setTitle(LANG.run_skip_button);
@@ -222,6 +226,8 @@ export function updateLanguage(skipLoRA = false, skipRightClick = false) {
     if(!skipRightClick) {
         globalThis.rightClick.updateLanguage();
     }
+
+    globalThis.mainGallery?.updateCompareLanguage?.();
 
     globalThis.imageInfo.updateHintText(LANG.image_info_drag_hint_top, LANG.image_info_drag_hint_bottom);
 
@@ -326,6 +332,18 @@ export function updateSettings() {
     globalThis.dropdownList.vae_unet.updateDefaults(SETTINGS.api_vae_unet_model);
     globalThis.dropdownList.vae_sdxl.updateDefaults(SETTINGS.api_vae_sdxl_model);
     globalThis.dropdownList.vae_sdxl_override.setValue(SETTINGS.api_vae_sdxl_override);
+    globalThis.dropdownList.forge_override_vae?.setValue(SETTINGS.api_forge_override_vae === true);
+    globalThis.dropdownList.forge_compute_fp16?.setValue(SETTINGS.api_forge_compute_fp16 === true);
+    globalThis.dropdownList.forge_sage_fp16_cast?.setValue(SETTINGS.api_forge_sage_fp16_cast === true);
+    {
+        const mode = ['auto', 'direct', 'tiled'].includes(SETTINGS.api_forge_override_vae_mode)
+            ? SETTINGS.api_forge_override_vae_mode
+            : 'auto';
+        SETTINGS.api_forge_override_vae_mode = mode;
+        globalThis.dropdownList.forge_override_vae_mode?.updateDefaults(mode);
+        const modeHost = document.querySelector('.forge-override-vae-mode');
+        if (modeHost) modeHost.hidden = SETTINGS.api_forge_override_vae !== true;
+    }
     globalThis.dropdownList.diffusion_model_weight_dtype.updateDefaults(SETTINGS.api_model_file_diffusion_weight_dtype);
     globalThis.dropdownList.textencoder.updateDefaults(SETTINGS.api_model_file_text_encoder);
     globalThis.dropdownList.textencoder_type.updateDefaults(SETTINGS.api_model_file_text_encoder_type);
@@ -340,10 +358,13 @@ export function updateSettings() {
     globalThis.generate.seed.setValue(SETTINGS.random_seed);
     globalThis.generate.cfg.setValue(SETTINGS.cfg);
     globalThis.generate.step.setValue(SETTINGS.step);
+    globalThis.generate.aspectLock?.unlock?.({ persistState: false, refreshLayer: false });
     globalThis.generate.width.setValue(SETTINGS.width);
     globalThis.generate.height.setValue(SETTINGS.height);
+    globalThis.generate.aspectLock?.restoreFromSettings?.(SETTINGS);
     globalThis.generate.batch.setValue(SETTINGS.batch);    
     globalThis.generate.landscape.setValue(SETTINGS.api_image_landscape);
+    hiresCalculate();
     globalThis.generate.boundingEnable?.setValue(Boolean(SETTINGS.bounding_enable));
     globalThis.bounding?.setBoxes(SETTINGS.bounding_boxes);
     globalThis.bounding?.applyToolSettings?.();
@@ -376,6 +397,10 @@ export function updateSettings() {
     globalThis.hifix.randomSeed.setValue(SETTINGS.api_hf_random_seed);
     globalThis.hifix.steps.setValue(SETTINGS.api_hf_steps);    
     globalThis.hifix.model.setOptions(globalThis.cachedFiles.upscalerList, null, LANG.api_hf_upscaler_selected, SETTINGS.api_hf_upscaler_selected);
+
+    globalThis.generate.controlnet?.setValue(SETTINGS.api_controlnet_enable === true);
+    globalThis.generate.adetailer?.setValue(SETTINGS.api_adetailer_enable === true);
+    globalThis.generate.generate_hires?.syncFromGallery?.();
 
     globalThis.generate.refiner.setValue(SETTINGS.api_refiner_enable);
     globalThis.generate.refiner_dummy.setValue(SETTINGS.api_refiner_enable);

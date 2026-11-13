@@ -3,7 +3,8 @@ import { createImageTagger } from './components/imageInfoTagger.js';
 import { handlePastedJsonOrCsvFile, handlePastedPlainTextItem, isJsonListDataFile, resolveJsonListFileType } from './components/imageInfoDataFiles.js';
 import { extractImageMetadata, parseGenerationParameters } from './components/imageInfoMetadata.js';
 import { createMiraITUWindow } from './components/imageInfoMiraITU.js';
-import { fileToBase64 } from './generate.js';
+import { fileToBase64, requestTaggerOffload } from './generate.js';
+import { hiresCalculate } from './tools/hiresCalculation.js';
 
 let cachedImage = '';
 
@@ -223,6 +224,7 @@ export function setupImageUploadOverlay() {
         clearImageAndMetadata();
         isShowing = false;
         document.removeEventListener('paste', handlePaste);
+        void requestTaggerOffload();
     }
 
     function clearImageAndMetadata() {
@@ -483,6 +485,8 @@ export function setupImageUploadOverlay() {
             
             sendPrompt(parsedMetadata);
             globalThis.generate.landscape.setValue(false);
+            globalThis.generate.aspectLock?.unlock?.();
+            hiresCalculate();
             
             sendButton.textContent = LANG.image_info_send_tags_sent;
             setTimeout(() => {
@@ -563,6 +567,7 @@ export function setupImageUploadOverlay() {
         globalThis.generate.seed.setValue(extractedData.seed);
         globalThis.generate.cfg.setValue(extractedData.cfgScale);
         globalThis.generate.step.setValue(extractedData.steps);
+        globalThis.generate.aspectLock?.unlock?.();
         globalThis.generate.width.setValue(extractedData.width);
         globalThis.generate.height.setValue(extractedData.height);    
     }    

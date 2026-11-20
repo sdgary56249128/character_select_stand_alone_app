@@ -619,8 +619,8 @@ function applyADetailer(workflow, adetailers, workflowInfo) {
         "cycle": 1,
         "inpaint_model": false,
         "noise_mask_feather": 20,
-        "tiled_encode": false,
-        "tiled_decode": false,
+        "tiled_encode": adetailer.tiled === true,   // uq-local: Image Remote config detailer_tiled_vae (close-ups pushed SDXL off a 16 GB card)
+        "tiled_decode": adetailer.tiled === true,
         "image": [
           `${imageVAED}`,
           0
@@ -755,8 +755,8 @@ function applyADetailerUnet(workflow, adetailers, workflowInfo) {
         "cycle": 1,
         "inpaint_model": false,
         "noise_mask_feather": 20,
-        "tiled_encode": false,
-        "tiled_decode": false,
+        "tiled_encode": adetailer.tiled === true,   // uq-local: Image Remote config detailer_tiled_vae (close-ups pushed SDXL off a 16 GB card)
+        "tiled_decode": adetailer.tiled === true,
         "image": [
           `${imageVAED}`,
           0
